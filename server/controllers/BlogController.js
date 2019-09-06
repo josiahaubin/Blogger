@@ -1,8 +1,10 @@
 import express from 'express'
 import BlogService from '../services/BlogService';
 import { Authorize } from '../middleware/authorize.js'
+import CommentService from '../services/CommentService';
 
 let _blogService = new BlogService().repository
+let _commentService = new CommentService().repository
 
 export default class BlogController {
     constructor() {
@@ -10,6 +12,7 @@ export default class BlogController {
             //NOTE all routes after the authenticate method will require the user to be logged in to access
             .get('', this.getAll)
             .get('/:id', this.getById)
+            .get('/:id/comments', this.getBlogComments)
             .use(Authorize.authenticated)
             .post('', this.create)
             .put('/:id', this.edit)
@@ -19,7 +22,7 @@ export default class BlogController {
     async getAll(req, res, next) {
         try {
             let data = await _blogService.find({})
-                .populate('authorId', 'name')
+                .populate('author', 'name')
             return res.send(data)
         } catch (error) { next(error) }
 
@@ -28,7 +31,7 @@ export default class BlogController {
     async getById(req, res, next) {
         try {
             let data = await _blogService.findById(req.params.id)
-                .populate('authorId', 'name')
+                .populate('author', 'name')
             if (!data) {
                 throw new Error("Invalid Id")
             }
@@ -36,10 +39,18 @@ export default class BlogController {
         } catch (error) { next(error) }
     }
 
+    async getBlogComments(req, res, next) {
+        try {
+            let data = await _commentService.find({ blogId: req.params.id })
+                .populate('author', 'name')
+            return res.send(data)
+        } catch (error) { next(error) }
+    }
+
     async create(req, res, next) {
         try {
             //NOTE the user id is accessable through req.body.uid, never trust the client to provide you this information
-            req.body.authorId = req.session.uid
+            req.body.author = req.session.uid
             let data = await _blogService.create(req.body)
             res.send(data)
         } catch (error) { next(error) }
@@ -47,8 +58,8 @@ export default class BlogController {
 
     async edit(req, res, next) {
         try {
-            let data = await _blogService.findOneAndUpdate({ _id: req.params.id, authorId: req.session.uid }, req.body, { new: true })
-                .populate('authorId', 'name')
+            let data = await _blogService.findOneAndUpdate({ _id: req.params.id, author: req.session.uid }, req.body, { new: true })
+                .populate('author', 'name')
             if (data) {
                 return res.send(data)
             }
@@ -60,7 +71,10 @@ export default class BlogController {
 
     async delete(req, res, next) {
         try {
-            await _blogService.findOneAndRemove({ _id: req.params.id, authorId: req.session.uid })
+            let data = await _blogService.findOneAndRemove({ _id: req.params.id, author: req.session.uid })
+            if (!data) {
+                throw new Error("Denied: invalid id")
+            }
             res.send("deleted value")
         } catch (error) { next(error) }
 
